@@ -9,6 +9,7 @@ import java.util.InputMismatchException;
 import javax.mail.*;
 import javax.mail.internet.*;
 import java.util.Properties;
+import java.io.*;
 
 public class ToDoList_Assignment {
 
@@ -33,7 +34,9 @@ public class ToDoList_Assignment {
                 case 5 -> deleteTask(input, listOfTasks);
                 case 6 -> markTaskComplete(input, listOfTasks);
                 case 7 -> checkAndSendNotifications(userEmail, listOfTasks);
+                case 8 -> vectorSearch(input, listOfTasks, new VectorSearch());
                 case 0 -> {
+                    StorageSystem.saveTasksToFile(listOfTasks);
                     System.out.println("Goodbye!");
                     input.close();
                     return;
@@ -320,4 +323,60 @@ public class ToDoList_Assignment {
             System.out.println("No tasks are due within the next 24 hours.");
         }
     }
+    //VECTOR SEARCH
+    public static void vectorSearch(Scanner input, ArrayList<Task> listOfTasks, VectorSearch vectorSearch) {
+    input.nextLine(); // Clear the buffer
+    System.out.print("Enter your search query: ");
+    String query = input.nextLine();
+
+    try {
+        ArrayList<Task> results = vectorSearch.searchTasks(query, listOfTasks);
+        if (results.isEmpty()) {
+            System.out.println("No tasks found for the query \"" + query + "\".");
+        } else {
+            System.out.println("\n=== Search Results ===");
+            for (Task task : results) {
+                System.out.println(task);
+            }
+        }
+    } catch (Exception e) {
+        System.out.println("Error during search: " + e.getMessage());
+    }
 }
+    //STORAGE SYSTEM
+    private static final String FILE_NAME = "tasks.txt";
+
+    // Save tasks to a file
+    public static void saveTasksToFile(ArrayList<Task> listOfTasks) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_NAME))) {
+            for (Task task : listOfTasks) {
+                writer.write(task.toFileString());
+                writer.newLine();
+            }
+            System.out.println("Tasks saved successfully to " + FILE_NAME);
+        } catch (IOException e) {
+            System.out.println("Error saving tasks: " + e.getMessage());
+        }
+    }
+
+    // Load tasks from a file
+    public static void loadTasksFromFile(ArrayList<Task> listOfTasks) {
+        File file = new File(FILE_NAME);
+        if (!file.exists()) {
+            System.out.println("No saved tasks found. Starting with an empty list.");
+            return;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(FILE_NAME))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Task task = Task.fromFileString(line);
+                listOfTasks.add(task);
+            }
+            System.out.println("Tasks loaded successfully from " + FILE_NAME);
+        } catch (IOException e) {
+            System.out.println("Error loading tasks: " + e.getMessage());
+        }
+    }
+}
+
