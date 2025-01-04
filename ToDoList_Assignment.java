@@ -1,5 +1,8 @@
 package com.mycompany.todolist_assignment;
 import java.util.Scanner;
+import java.io.*;
+import java.util.*;
+import java.text.*;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.text.SimpleDateFormat;
@@ -9,18 +12,29 @@ import java.util.InputMismatchException;
 import javax.mail.*;
 import javax.mail.internet.*;
 import java.util.Properties;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.*;
+import org.apache.lucene.index.*;
+import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.search.*;
+import org.apache.lucene.store.*;
 
 public class ToDoList_Assignment {
-
+    
+    private static final String FILE_NAME = "task.dat";
+    
     public static void main(String[] args) {
         Scanner input = new Scanner (System.in);
         
         ArrayList<Task> listOfTasks = new ArrayList<>(); //Creates a new ArrayList to store the tasks
+        StorageSystem.loadTasks(listOfTasks, FILE_NAME); // Load saved tasks
         
         System.out.println("Welcome to your To-Do List!");
         System.out.println("Before starting, please enter your email address for task notifications:");
         String userEmail = input.nextLine();
         System.out.println();
+
+        VectorSearch vectorSearch = new VectorSearch();
         
         while (true) {
             int choice = getChoice(input);
@@ -33,7 +47,16 @@ public class ToDoList_Assignment {
                 case 5 -> deleteTask(input, listOfTasks);
                 case 6 -> markTaskComplete(input, listOfTasks);
                 case 7 -> checkAndSendNotifications(userEmail, listOfTasks);
+                case 8 -> {
+                    try {
+                        vectorSearch.indexTasks(listOfTasks);
+                        searchWithVector(input, vectorSearch, listOfTasks);
+                    } catch (Exception e) {
+                        System.out.println("Vector search error: " + e.getMessage());
+                    }
+                }
                 case 0 -> {
+                    StorageSystem.saveTasksToFile(listOfTasks);
                     System.out.println("Goodbye!");
                     input.close();
                     return;
@@ -58,6 +81,20 @@ public class ToDoList_Assignment {
             (0) Exit
             ==========================""");
             return input.nextInt();
+    }
+
+    private static void searchWithVector(Scanner input, VectorSearch vectorSearch, ArrayList<Task> listOfTasks) throws Exception {
+        input.nextLine(); // clear newline
+        System.out.print("Enter search query: ");
+        String queryStr = input.nextLine();
+
+        ArrayList<Task> results = vectorSearch.searchTasks(queryStr, listOfTasks);
+        System.out.println("\n=== Vector Search Results ===");
+        if (results.isEmpty()) {
+            System.out.println("No tasks found matching the query.");
+        } else {
+            results.forEach(System.out::println);
+        }
     }
     
     //TASK ADDER
@@ -145,6 +182,74 @@ public class ToDoList_Assignment {
         }
         for (Task task : listOfTasks) { //iterates through the ArrayList for each element in it
              System.out.println(task);
+        }
+    }
+
+    // Additional functions for task operations and email notifications can remain as in the original.
+    static class StorageSystem {
+         public static void saveTasks(ArrayList<Task> listOfTasks, String fileName) {
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(fileName))) {
+                oos.writeObject(listOfTasks);
+                System.out.println("Tasks saved successfully.");
+            } catch (IOException e) {
+                System.out.println("Error saving tasks: " + e.getMessage());
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        public static void loadTasks(ArrayList<Task> listOfTasks, String fileName) {
+            File file = new File(fileName);
+            if (!file.exists()) {
+                System.out.println("No saved tasks found.");
+                return;
+            }
+
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
+                listOfTasks.addAll((ArrayList<Task>) ois.readObject());
+                System.out.println("Tasks loaded successfully.");
+            } catch (IOException | ClassNotFoundException e) {
+                System.out.println("Error loading tasks: " + e.getMessage());
+            }
+        }
+    }
+
+    static class VectorSearch {
+        private final RAMDirectory index;
+        private final StandardAnalyzer analyzer;
+
+        public VectorSearch() {
+            this.index = new RAMDirectory();
+            this.analyzer = new StandardAnalyzer();
+        }
+
+        public void indexTasks(ArrayList<Task> listOfTasks) throws Exception {
+            try (IndexWriter writer = new IndexWriter(index, new IndexWriterConfig(analyzer))) {
+                for (Task task : listOfTasks) {
+                    Document doc = new Document();
+                    doc.add(new TextField("title", task.getTitle(), Field.Store.YES));
+                    doc.add(new TextField("description", task.getDescription(), Field.Store.YES));
+                    doc.add(new IntPoint("id", task.getId()));
+                    doc.add(new StoredField("id", task.getId()));
+                    writer.addDocument(doc);
+                }
+                System.out.println("Tasks indexed successfully.");
+            }
+        }
+        public ArrayList<Task> searchTasks(String queryStr) throws Exception {
+            ArrayList<Task> results = new ArrayList<>();
+            Query query = new QueryParser("title", analyzer).parse(queryStr);
+
+            try (IndexReader reader = DirectoryReader.open(index)) {
+                IndexSearcher searcher = new IndexSearcher(reader);
+                TopDocs docs = searcher.search(query, 10);
+
+                for (ScoreDoc scoreDoc : docs.scoreDocs) {
+                    Document doc = searcher.doc(scoreDoc.doc);
+                    results.add(new Task(doc.get("title"), doc.get("description"), doc.get("dueDate"), "", ""));
+                }
+            }
+
+            return results;
         }
     }
     
